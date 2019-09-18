@@ -1,47 +1,62 @@
+const $ = require('jquery');
+const Peer = require('simple-peer');
+var wrtc = require('electron-webrtc');
+const playVideo = require('./playVideo');
 function openStream() {
-    //The MediaDevices.getUserMedia() method prompts the user for permission to use a media input 
-    if (navigator.mediaDevices === undefined) {
-       navigator.mediaDevices = {};
-     }
+  //The MediaDevices.getUserMedia() method prompts the user for permission to use a media input 
+  if (navigator.mediaDevices === undefined) {
+    navigator.mediaDevices = {};
+  }
+  if (navigator.mediaDevices.getUserMedia === undefined) {
+    navigator.mediaDevices.getUserMedia = function (constraints) {
+      var getUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+
+      if (!getUserMedia) {
+        return Promise.reject(new Error('getUserMedia is not implemented in this browser'));
+      }
+
+      return new Promise(function (resolve, reject) {
+        getUserMedia.call(navigator, constraints, resolve, reject);
+      });
+    }
+  }
+
+  navigator.mediaDevices.getUserMedia({ audio: false, video: true })
+    .then((stream) => {
+      playVideo(stream,'localStream');
+      // Peer to peer The sender and receiver Peer 
+      const peer = new Peer({
+        wrtc: wrtc,
+        initiator: location.hash === '#1',
+        trickle: false,
+        stream: stream
+      });
+      peer.on('signal', token => {
+        console.log(token);
+        $('#textMySignal').val(JSON.stringify(token));
+
+      });
+
+      $('#buttonSignal').click(() => {
+        // retrieve data from INPUT
+        const friendSignal = JSON.parse($('#textFriendSignal').val());
+        console.log(friendSignal);
+        // báo tín hiệu 
+        peer.signal(friendSignal);
+      });
+
+      peer.on('stream',(stream) => {
+        const video = document.getElementById('friendStream');
+        // Older browsers may not have srcObject
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+            video.play();
+        };
+      });
      
-     // Some browsers partially implement mediaDevices. We can't just assign an object
-     // with getUserMedia as it would overwrite existing properties.
-     // Here, we will just add the getUserMedia property if it's missing.
-     if (navigator.mediaDevices.getUserMedia === undefined) {
-       navigator.mediaDevices.getUserMedia = function(constraints) {
-     
-         // First get ahold of the legacy getUserMedia, if present
-         var getUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
-     
-         // Some browsers just don't implement it - return a rejected promise with an error
-         // to keep a consistent interface
-         if (!getUserMedia) {
-           return Promise.reject(new Error('getUserMedia is not implemented in this browser'));
-         }
-     
-         // Otherwise, wrap the call to the old navigator.getUserMedia with a Promise
-         return new Promise(function(resolve, reject) {
-           getUserMedia.call(navigator, constraints, resolve, reject);
-         });
-       }
-     }
-     
-     navigator.mediaDevices.getUserMedia({ audio: false, video: true })
-     .then(function(stream) {
-       var video = document.querySelector('video');
-       // Older browsers may not have srcObject
-       if ("srcObject" in video) {
-         video.srcObject = stream;
-       } else {
-         // Avoid using this in new browsers, as it is going away.
-         video.src = window.URL.createObjectURL(stream);
-       }
-       video.onloadedmetadata = function(e) {
-         video.play();
-       };
-     })
-     .catch(function(err) {
-       console.log(err.name + ": " + err.message);
-     });
+    })
+    .catch(function (err) {
+      console.log(err.name + ": " + err.message);
+    });
 };
 module.exports = openStream;
